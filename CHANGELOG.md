@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- Add `custom:local-adsb-map-card`, an interactive Leaflet-based map with heading-rotated aircraft markers, click popups, selected-aircraft details, range rings, and short browser-side trails.
+- Keep the original radar card available as `custom:local-adsb-radar-card`.
+
 ## 0.3.2
 
 - Sort manifest keys for hassfest validation.

@@ -41,9 +41,9 @@ Map entities:
 
 Aircraft summary and map entities include useful attributes such as ICAO hex, callsign, distance, altitude, speed, heading, vertical rate, squawk, and lat/lon.
 
-## Lovelace radar card
+## Lovelace cards
 
-The integration bundles a custom Lovelace card that plots active aircraft on a local radar display with airplane silhouettes rotated by ADS-B track/heading.
+The integration bundles custom Lovelace cards for live aircraft dashboards.
 
 After Home Assistant loads the integration, add this JavaScript module as a dashboard resource:
 
@@ -51,7 +51,40 @@ After Home Assistant loads the integration, add this JavaScript module as a dash
 /local_adsb/local-adsb-radar-card.js
 ```
 
-Then add a manual card:
+### Interactive map card
+
+`custom:local-adsb-map-card` shows active aircraft on an actual Leaflet/OpenStreetMap map with heading-rotated aircraft markers, click popups, selected-aircraft details, range rings, and short browser-side trails.
+
+```yaml
+type: custom:local-adsb-map-card
+title: Live ADS-B Map
+source: Local ADS-B Receiver
+height: 620px
+auto_fit: true
+show_trails: true
+trail_minutes: 5
+range_rings_miles:
+  - 5
+  - 10
+  - 25
+  - 50
+```
+
+Optional map settings:
+
+- `tile_url` / `tile_attribution`: override the map tile provider.
+- `height`: map height, default `620px`.
+- `auto_fit`: fit Home + active aircraft until you manually pan/zoom.
+- `show_list`: show/hide the clickable aircraft list.
+- `show_stats`: show/hide the stat strip.
+- `show_trails`: show/hide browser-side recent position trails.
+- `trail_minutes`: how long to keep trail points in the browser.
+- `range_rings_miles`: range rings from Home.
+- `low_altitude_feet` / `very_low_altitude_feet`: marker color thresholds.
+
+### Radar card
+
+`custom:local-adsb-radar-card` plots active aircraft on a local radar display with airplane silhouettes rotated by ADS-B track/heading.
 
 ```yaml
 type: custom:local-adsb-radar-card
@@ -62,7 +95,7 @@ show_labels: true
 show_stats: true
 ```
 
-Optional card settings:
+Optional radar settings:
 
 - `radius_miles`: fixed radar range. If omitted, the card auto-fits up to `max_radius_miles`.
 - `min_radius_miles` / `max_radius_miles`: auto-fit range bounds.
