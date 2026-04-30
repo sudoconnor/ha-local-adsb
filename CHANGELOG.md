@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.1
+
+- Declare the Home Assistant `http` component as an `after_dependency` for the bundled Lovelace card static path.
+
 ## 0.3.0
 
 - Bundle a Lovelace radar card with heading-rotated aircraft silhouettes.
