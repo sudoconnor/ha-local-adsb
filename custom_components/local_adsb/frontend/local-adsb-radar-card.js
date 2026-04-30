@@ -240,6 +240,8 @@ class LocalAdsbMapCard extends HTMLElement {
     this._trails = new Map();
     this._rangeRings = [];
     this._trackPoints = new Map();
+    this._historyFetchAt = 0;
+    this._historyInFlight = undefined;
     this._selectedHex = undefined;
     this._shellRendered = false;
   }
@@ -259,6 +261,8 @@ class LocalAdsbMapCard extends HTMLElement {
       show_stats: true,
       show_trails: true,
       trail_minutes: 5,
+      history_api: "/api/local_adsb/history",
+      history_fetch_interval_seconds: 15,
       range_rings_miles: [5, 10, 25, 50],
       low_altitude_feet: 3000,
       very_low_altitude_feet: 1000,
@@ -308,7 +312,7 @@ class LocalAdsbMapCard extends HTMLElement {
     if (!this.shadowRoot || this._shellRendered) return;
     this.shadowRoot.innerHTML = `
       <style>
-        @import url("https://unpkg.com/leaflet@1.9.4/dist/leaflet.css");
+        @import url("/local_adsb/vendor/leaflet/leaflet.css");
         :host { display: block; }
         ha-card { overflow: hidden; }
         .header {
@@ -415,6 +419,7 @@ class LocalAdsbMapCard extends HTMLElement {
   _update() {
     if (!this._hass || !this.shadowRoot) return;
     const aircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+    this._refreshHistory(aircraft);
     this._updateTracks(aircraft);
     this._updateHeaderAndPanels(aircraft);
     if (!this._map || !window.L) return;
@@ -473,6 +478,53 @@ class LocalAdsbMapCard extends HTMLElement {
         else this._trackPoints.delete(key);
       }
     }
+  }
+
+  async _refreshHistory(aircraft) {
+    if (!this._config.show_trails || !this._config.history_api || this._historyInFlight) return;
+    const now = Date.now();
+    const intervalMs = Math.max(5, Number(this._config.history_fetch_interval_seconds) || 15) * 1000;
+    if (now - this._historyFetchAt < intervalMs) return;
+
+    this._historyFetchAt = now;
+    const maxAge = Math.max(60, Number(this._config.trail_minutes) * 60 || 300);
+    const url = new URL(this._config.history_api, window.location.origin);
+    url.searchParams.set("seconds", String(Math.ceil(maxAge)));
+
+    this._historyInFlight = fetch(url.toString(), { credentials: "same-origin" })
+      .then((response) => {
+        if (!response.ok) throw new Error(`history HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((payload) => {
+        const activeKeys = new Set(aircraft.map((plane) => plane.hex || plane.entityId));
+        for (const [key, details] of Object.entries(payload.aircraft || {})) {
+          if (!activeKeys.has(key)) continue;
+          const historyPoints = (details.points || [])
+            .map((point) => ({
+              lat: Number(point.lat),
+              lon: Number(point.lon),
+              at: Number(point.at) * 1000,
+            }))
+            .filter((point) =>
+              Number.isFinite(point.lat) &&
+              Number.isFinite(point.lon) &&
+              Number.isFinite(point.at),
+            );
+          this._trackPoints.set(
+            key,
+            mergeTrackPoints(this._trackPoints.get(key) || [], historyPoints, maxAge * 1000),
+          );
+        }
+        this._updateTrails(aircraft);
+      })
+      .catch((error) => {
+        // The card still works with browser-session trails if the optional history API is unavailable.
+        console.debug("Local ADS-B history fetch failed", error);
+      })
+      .finally(() => {
+        this._historyInFlight = undefined;
+      });
   }
 
   _updateMarkers(aircraft) {
@@ -699,13 +751,34 @@ function loadLeaflet() {
   if (window.localAdsbLeafletPromise) return window.localAdsbLeafletPromise;
   window.localAdsbLeafletPromise = new Promise((resolve, reject) => {
     const script = document.createElement("script");
-    script.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    script.src = "/local_adsb/vendor/leaflet/leaflet.js";
     script.async = true;
     script.onload = () => resolve(window.L);
-    script.onerror = () => reject(new Error("Leaflet failed to load from CDN"));
+    script.onerror = () => reject(new Error("Leaflet failed to load from Local ADS-B assets"));
     document.head.appendChild(script);
   });
   return window.localAdsbLeafletPromise;
+}
+
+function mergeTrackPoints(existing, incoming, maxAgeMs) {
+  const cutoff = Date.now() - maxAgeMs;
+  const merged = [...existing, ...incoming]
+    .filter((point) => point.at >= cutoff)
+    .sort((a, b) => a.at - b.at);
+  const deduped = [];
+  for (const point of merged) {
+    const last = deduped[deduped.length - 1];
+    if (
+      last &&
+      Math.abs(last.lat - point.lat) < 0.00001 &&
+      Math.abs(last.lon - point.lon) < 0.00001 &&
+      Math.abs(last.at - point.at) < 2000
+    ) {
+      continue;
+    }
+    deduped.push(point);
+  }
+  return deduped.slice(-240);
 }
 
 if (!customElements.get("local-adsb-radar-card")) {

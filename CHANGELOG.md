@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.0
+
+- Vendor Leaflet JavaScript/CSS inside the integration so the interactive map engine loads from Home Assistant instead of a CDN.
+- Add authenticated `/api/local_adsb/history` for recorder-safe in-memory aircraft track history.
+- Seed map-card trails from the integration history so short trails survive dashboard refreshes.
+
 ## 0.4.0
 
 - Add `custom:local-adsb-map-card`, an interactive Leaflet-based map with heading-rotated aircraft markers, click popups, selected-aircraft details, range rings, and short browser-side trails.

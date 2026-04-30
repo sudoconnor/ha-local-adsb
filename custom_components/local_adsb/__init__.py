@@ -17,6 +17,7 @@ except ImportError:  # pragma: no cover - compatibility with older Home Assistan
 from .api import LocalAdsbApiClient
 from .const import CONF_AIRCRAFT_URL, CONF_MONITOR_URL, DOMAIN
 from .coordinator import LocalAdsbDataUpdateCoordinator
+from .history import LocalAdsbHistoryView
 
 PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.GEO_LOCATION, Platform.SENSOR]
 FRONTEND_PATH = Path(__file__).parent / "frontend"
@@ -29,6 +30,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAdsbConfigEntry) ->
     """Set up Local ADS-B Receiver from a config entry."""
 
     await _async_register_frontend(hass)
+    _async_register_history_api(hass)
 
     session = async_get_clientsession(hass)
     client = LocalAdsbApiClient(
@@ -40,6 +42,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAdsbConfigEntry) ->
 
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
+    hass.data.setdefault(DOMAIN, {}).setdefault("coordinators", {})[
+        entry.entry_id
+    ] = coordinator
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_update_listener))
@@ -49,7 +54,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: LocalAdsbConfigEntry) ->
 async def async_unload_entry(hass: HomeAssistant, entry: LocalAdsbConfigEntry) -> bool:
     """Unload Local ADS-B Receiver."""
 
-    return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+    if unload_ok:
+        hass.data.setdefault(DOMAIN, {}).setdefault("coordinators", {}).pop(
+            entry.entry_id, None
+        )
+    return unload_ok
 
 
 async def _async_update_listener(hass: HomeAssistant, entry: LocalAdsbConfigEntry) -> None:
@@ -73,3 +83,14 @@ async def _async_register_frontend(hass: HomeAssistant) -> None:
         hass.http.register_static_path(STATIC_PATH, str(FRONTEND_PATH), True)
 
     data["frontend_registered"] = True
+
+
+def _async_register_history_api(hass: HomeAssistant) -> None:
+    """Expose an authenticated in-memory aircraft history API."""
+
+    data = hass.data.setdefault(DOMAIN, {})
+    if data.get("history_api_registered"):
+        return
+
+    hass.http.register_view(LocalAdsbHistoryView(hass))
+    data["history_api_registered"] = True
