@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from homeassistant.components.geo_location import GeolocationEvent
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
+from .const import (
+    ATTR_ALTITUDE_FEET,
+    ATTR_CALLSIGN,
+    ATTR_DISTANCE_MILES,
+    ATTR_HEX,
+    ATTR_LATITUDE,
+    ATTR_LONGITUDE,
+    ATTR_SPEED_KTS,
+    ATTR_SQUAWK,
+    ATTR_TRACK_DEGREES,
+    ATTR_VERTICAL_RATE_FPM,
+)
 from .coordinator import LocalAdsbDataUpdateCoordinator
 from .models import Aircraft
 
@@ -106,3 +120,31 @@ class LocalAdsbAircraftGeoLocation(
         """Return aircraft distance from home in miles."""
 
         return self.aircraft.distance_miles if self.aircraft else None
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return aircraft details for Lovelace cards and automations."""
+
+        aircraft = self.aircraft
+        if aircraft is None:
+            return {ATTR_HEX: self._hex}
+
+        return {
+            ATTR_HEX: aircraft.hex,
+            ATTR_CALLSIGN: aircraft.callsign,
+            ATTR_DISTANCE_MILES: round(aircraft.distance_miles, 2)
+            if aircraft.distance_miles is not None
+            else None,
+            ATTR_ALTITUDE_FEET: aircraft.altitude,
+            ATTR_SPEED_KTS: aircraft.speed,
+            ATTR_TRACK_DEGREES: aircraft.track,
+            ATTR_VERTICAL_RATE_FPM: aircraft.vertical_rate,
+            ATTR_SQUAWK: aircraft.squawk,
+            ATTR_LATITUDE: aircraft.latitude,
+            ATTR_LONGITUDE: aircraft.longitude,
+            "category": aircraft.category,
+            "rssi": aircraft.rssi,
+            "seen_seconds": aircraft.seen,
+            "seen_position_seconds": aircraft.seen_pos,
+            "messages": aircraft.messages,
+        }

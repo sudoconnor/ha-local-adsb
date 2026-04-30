@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.0
+
+- Bundle a Lovelace radar card with heading-rotated aircraft silhouettes.
+- Expose aircraft details on active `geo_location` entities for custom cards and automations.
+- Register the card JavaScript at `/local_adsb/local-adsb-radar-card.js` when the integration loads.
+
 ## 0.2.0
 
 - Add Home Assistant map support with `geo_location` entities for positioned aircraft seen in the last 60 seconds.

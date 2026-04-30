@@ -39,7 +39,36 @@ Map entities:
 
 - One `geo_location` entity per positioned aircraft seen in the last 60 seconds. These show up on the built-in Home Assistant Map card while active, then go unavailable when stale.
 
-Aircraft summary entities include useful attributes such as ICAO hex, callsign, distance, altitude, speed, heading, vertical rate, squawk, and lat/lon.
+Aircraft summary and map entities include useful attributes such as ICAO hex, callsign, distance, altitude, speed, heading, vertical rate, squawk, and lat/lon.
+
+## Lovelace radar card
+
+The integration bundles a custom Lovelace card that plots active aircraft on a local radar display with airplane silhouettes rotated by ADS-B track/heading.
+
+After Home Assistant loads the integration, add this JavaScript module as a dashboard resource:
+
+```text
+/local_adsb/local-adsb-radar-card.js
+```
+
+Then add a manual card:
+
+```yaml
+type: custom:local-adsb-radar-card
+title: ADS-B Radar
+source: Local ADS-B Receiver
+max_radius_miles: 80
+show_labels: true
+show_stats: true
+```
+
+Optional card settings:
+
+- `radius_miles`: fixed radar range. If omitted, the card auto-fits up to `max_radius_miles`.
+- `min_radius_miles` / `max_radius_miles`: auto-fit range bounds.
+- `center_latitude` / `center_longitude`: override the Home Assistant home location.
+- `show_labels`: show/hide callsign and altitude/speed labels.
+- `show_stats`: show/hide the stat strip below the radar.
 
 ## Events
 
