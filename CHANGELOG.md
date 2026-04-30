@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.2
+
+- Sort manifest keys for hassfest validation.
+
 ## 0.3.1
 
 - Declare the Home Assistant `http` component as an `after_dependency` for the bundled Lovelace card static path.
