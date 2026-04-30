@@ -35,6 +35,10 @@ Binary sensors:
 - Receiver connected
 - Feeder connected
 
+Map entities:
+
+- One `geo_location` entity per positioned aircraft seen in the last 60 seconds. These show up on the built-in Home Assistant Map card while active, then go unavailable when stale.
+
 Aircraft summary entities include useful attributes such as ICAO hex, callsign, distance, altitude, speed, heading, vertical rate, squawk, and lat/lon.
 
 ## Events
@@ -79,7 +83,7 @@ The config flow asks for:
 - Receiver host/IP
 - Aircraft JSON URL
 - FR24 monitor JSON URL
-- Poll interval
+- Poll interval, default 5 seconds
 - Home latitude/longitude
 - Event radius in miles
 - Low-altitude threshold in feet

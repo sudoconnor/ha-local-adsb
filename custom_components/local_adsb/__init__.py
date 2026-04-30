@@ -11,7 +11,7 @@ from .api import LocalAdsbApiClient
 from .const import CONF_AIRCRAFT_URL, CONF_MONITOR_URL
 from .coordinator import LocalAdsbDataUpdateCoordinator
 
-PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.SENSOR]
+PLATFORMS: list[Platform] = [Platform.BINARY_SENSOR, Platform.GEO_LOCATION, Platform.SENSOR]
 
 LocalAdsbConfigEntry = ConfigEntry
 

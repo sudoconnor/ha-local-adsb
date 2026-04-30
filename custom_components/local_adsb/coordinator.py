@@ -17,6 +17,7 @@ from .const import (
     CONF_LOW_ALTITUDE_FEET,
     CONF_RADIUS_MILES,
     DEFAULT_LOW_ALTITUDE_FEET,
+    DEFAULT_MAP_TRACK_SECONDS,
     DEFAULT_RADIUS_MILES,
     DEFAULT_SCAN_INTERVAL,
     DOMAIN,
@@ -91,6 +92,33 @@ class LocalAdsbDataUpdateCoordinator(DataUpdateCoordinator[ReceiverData]):
                 self.config_entry.data.get(CONF_LOW_ALTITUDE_FEET, DEFAULT_LOW_ALTITUDE_FEET),
             )
         )
+
+    @property
+    def map_track_seconds(self) -> int:
+        """Return how long aircraft remain active on the map after being seen."""
+
+        return DEFAULT_MAP_TRACK_SECONDS
+
+    @property
+    def map_aircraft(self) -> tuple[Aircraft, ...]:
+        """Return positioned aircraft seen within the map tracking window."""
+
+        if self.data is None:
+            return ()
+        return tuple(
+            aircraft
+            for aircraft in self.data.aircraft
+            if aircraft.latitude is not None
+            and aircraft.longitude is not None
+            and aircraft.seen is not None
+            and aircraft.seen <= self.map_track_seconds
+        )
+
+    @property
+    def map_aircraft_by_hex(self) -> dict[str, Aircraft]:
+        """Return active map aircraft keyed by ICAO hex."""
+
+        return {aircraft.hex: aircraft for aircraft in self.map_aircraft}
 
     @property
     def events_enabled(self) -> bool:
