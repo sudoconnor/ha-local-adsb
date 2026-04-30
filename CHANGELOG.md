@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.7.0
+
+- Expand the selected-aircraft panel into a richer flight detail view with vertical trend, last-seen timing, coordinates, entity/ICAO details, and trail summaries.
+- Render aircraft trails as faded segments so recent movement is visually stronger and older history recedes.
+- Keep the selected aircraft trail visible through short dropouts/filter changes and add trail dots for the selected aircraft.
+
 ## 0.6.0
 
 - Add cockpit-style map controls for All/Nearby/Low filtering, callsign/ICAO search, trail toggle, auto-fit toggle, and reset-view.

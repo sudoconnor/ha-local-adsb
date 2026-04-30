@@ -53,7 +53,7 @@ After Home Assistant loads the integration, add this JavaScript module as a dash
 
 ### Interactive map card
 
-`custom:local-adsb-map-card` shows active aircraft on an actual Leaflet/OpenStreetMap map with heading-rotated aircraft markers, click popups, selected-aircraft details, range rings, and short trails. The Leaflet map engine is bundled locally with the integration, and trails are seeded from an authenticated in-memory Home Assistant history endpoint so they survive dashboard refreshes without bloating Recorder.
+`custom:local-adsb-map-card` shows active aircraft on an actual Leaflet/OpenStreetMap map with heading-rotated aircraft markers, click popups, a rich selected-aircraft detail panel, range rings, and faded short trails. The Leaflet map engine is bundled locally with the integration, and trails are seeded from an authenticated in-memory Home Assistant history endpoint so they survive dashboard refreshes without bloating Recorder.
 
 ```yaml
 type: custom:local-adsb-map-card
@@ -81,6 +81,7 @@ Optional map settings:
 - `show_stats`: show/hide the stat strip.
 - `show_trails`: show/hide recent position trails.
 - `trail_minutes`: how much in-memory track history to request/display.
+- Selected aircraft show a stronger dotted trail and keep their trail briefly visible through short dropouts or filter changes.
 - `history_api`: override the default `/api/local_adsb/history` endpoint.
 - `history_fetch_interval_seconds`: how often the card refreshes server-side trail history, default `15`.
 - `range_rings_miles`: range rings from Home.

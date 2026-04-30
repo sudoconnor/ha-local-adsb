@@ -240,6 +240,7 @@ class LocalAdsbMapCard extends HTMLElement {
     this._trails = new Map();
     this._rangeRings = [];
     this._trackPoints = new Map();
+    this._lastPlanes = new Map();
     this._historyFetchAt = 0;
     this._historyInFlight = undefined;
     this._selectedHex = undefined;
@@ -400,8 +401,25 @@ class LocalAdsbMapCard extends HTMLElement {
         .value { font-size: 1rem; font-weight: 650; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .below { display: grid; grid-template-columns: 1fr 1.25fr; gap: 12px; padding: 0 12px 12px; }
         .selected { padding: 12px; min-height: 100px; }
-        .selected-title { font-size: 1.05rem; font-weight: 700; margin-bottom: 6px; }
-        .selected-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px 12px; }
+        .selected-head { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; margin-bottom: 8px; }
+        .selected-title { font-size: 1.08rem; font-weight: 750; line-height: 1.2; }
+        .selected-subline { margin-top: 2px; color: var(--secondary-text-color); font-size: 0.78rem; }
+        .selected-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px; }
+        .status-chip {
+          border-radius: 999px;
+          color: white;
+          flex: 0 0 auto;
+          font-size: 0.76rem;
+          font-weight: 700;
+          padding: 5px 9px;
+          text-transform: uppercase;
+          letter-spacing: 0.02em;
+        }
+        .status-chip.climbing { background: #00b894; }
+        .status-chip.descending { background: #e17055; }
+        .status-chip.level { background: #636e72; }
+        .status-chip.stale { background: #6c5ce7; }
+        .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; }
         .aircraft-list { display: grid; gap: 6px; max-height: 260px; overflow: auto; padding-right: 2px; }
         .aircraft-row {
           border: 0;
@@ -438,6 +456,7 @@ class LocalAdsbMapCard extends HTMLElement {
         @media (max-width: 760px) {
           .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
           .below { grid-template-columns: 1fr; }
+          .selected-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
         }
       </style>
       <ha-card>
@@ -476,14 +495,14 @@ class LocalAdsbMapCard extends HTMLElement {
     if (!this._hass || !this.shadowRoot) return;
     const allAircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
     const aircraft = this._filterAircraft(allAircraft);
-    this._refreshHistory(aircraft);
-    this._updateTracks(aircraft);
+    this._refreshHistory(allAircraft);
+    this._updateTracks(allAircraft);
     this._syncControls();
     this._updateHeaderAndPanels(aircraft, allAircraft);
     if (!this._map || !window.L) return;
     this._drawRangeRings();
     this._updateMarkers(aircraft);
-    this._updateTrails(aircraft);
+    this._updateTrails(aircraft, allAircraft);
     this._autoFit(aircraft);
     const status = this.shadowRoot.querySelector(".map-status");
     if (status) status.textContent = aircraft.length ? "" : "No positioned aircraft currently visible.";
@@ -570,18 +589,23 @@ class LocalAdsbMapCard extends HTMLElement {
   }
 
   _updateTracks(aircraft) {
-    if (!this._config.show_trails) return;
     const now = Date.now();
-    const maxAge = Number(this._config.trail_minutes) * 60 * 1000;
+    const maxAge = Math.max(60 * 1000, Number(this._config.trail_minutes) * 60 * 1000 || 5 * 60 * 1000);
     for (const plane of aircraft) {
       const key = plane.hex || plane.entityId;
+      this._lastPlanes.set(key, { ...plane, lastSeenAt: observedAt(plane, now) });
+      if (!this._config.show_trails) continue;
       const points = this._trackPoints.get(key) || [];
       const last = points[points.length - 1];
       if (!last || last.lat !== plane.latitude || last.lon !== plane.longitude) {
-        points.push({ lat: plane.latitude, lon: plane.longitude, at: now });
+        points.push(trackPointFromPlane(plane, now));
       }
-      this._trackPoints.set(key, points.filter((point) => now - point.at <= maxAge).slice(-80));
+      this._trackPoints.set(key, points.filter((point) => now - point.at <= maxAge).slice(-120));
     }
+    for (const [key, plane] of this._lastPlanes) {
+      if (now - (plane.lastSeenAt || 0) > maxAge) this._lastPlanes.delete(key);
+    }
+    if (!this._config.show_trails) return;
     for (const [key, points] of this._trackPoints) {
       if (!aircraft.some((plane) => (plane.hex || plane.entityId) === key)) {
         const fresh = points.filter((point) => now - point.at <= maxAge);
@@ -609,6 +633,7 @@ class LocalAdsbMapCard extends HTMLElement {
       })
       .then((payload) => {
         const activeKeys = new Set(aircraft.map((plane) => plane.hex || plane.entityId));
+        if (this._selectedHex) activeKeys.add(this._selectedHex);
         for (const [key, details] of Object.entries(payload.aircraft || {})) {
           if (!activeKeys.has(key)) continue;
           const historyPoints = (details.points || [])
@@ -616,6 +641,12 @@ class LocalAdsbMapCard extends HTMLElement {
               lat: Number(point.lat),
               lon: Number(point.lon),
               at: Number(point.at) * 1000,
+              altitude: num(point.altitude_feet),
+              speed: num(point.speed_kts),
+              track: num(point.track_degrees),
+              verticalRate: num(point.vertical_rate_fpm),
+              distance: num(point.distance_miles),
+              callsign: point.callsign,
             }))
             .filter((point) =>
               Number.isFinite(point.lat) &&
@@ -626,8 +657,27 @@ class LocalAdsbMapCard extends HTMLElement {
             key,
             mergeTrackPoints(this._trackPoints.get(key) || [], historyPoints, maxAge * 1000),
           );
+          const lastPoint = historyPoints[historyPoints.length - 1];
+          if (lastPoint) {
+            const remembered = this._lastPlanes.get(key) || {};
+            this._lastPlanes.set(key, {
+              ...remembered,
+              callsign: remembered.callsign || details.callsign || lastPoint.callsign,
+              hex: remembered.hex || details.hex || key,
+              latitude: remembered.latitude ?? lastPoint.lat,
+              longitude: remembered.longitude ?? lastPoint.lon,
+              altitude: remembered.altitude ?? lastPoint.altitude,
+              speed: remembered.speed ?? lastPoint.speed,
+              track: remembered.track ?? lastPoint.track,
+              verticalRate: remembered.verticalRate ?? lastPoint.verticalRate,
+              distance: remembered.distance ?? lastPoint.distance,
+              lastSeenAt: Math.max(remembered.lastSeenAt || 0, lastPoint.at),
+            });
+          }
         }
-        this._updateTrails(aircraft);
+        const allAircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+        this._updateTrails(this._filterAircraft(allAircraft), allAircraft);
+        this._updateHeaderAndPanels(this._filterAircraft(allAircraft), allAircraft);
       })
       .catch((error) => {
         // The card still works with browser-session trails if the optional history API is unavailable.
@@ -675,29 +725,72 @@ class LocalAdsbMapCard extends HTMLElement {
     }
   }
 
-  _updateTrails(aircraft) {
+  _updateTrails(aircraft, allAircraft = aircraft) {
     if (!window.L || !this._map) return;
     const L = window.L;
-    const active = new Set(aircraft.map((plane) => plane.hex || plane.entityId));
-    for (const [key, polyline] of this._trails) {
-      if (!active.has(key) || !this._config.show_trails) {
-        polyline.remove();
+    const visible = new Set(aircraft.map((plane) => plane.hex || plane.entityId));
+    if (this._selectedHex && this._trackPoints.has(this._selectedHex)) visible.add(this._selectedHex);
+    for (const [key, layer] of this._trails) {
+      if (!visible.has(key) || !this._config.show_trails) {
+        layer.remove();
         this._trails.delete(key);
       }
     }
     if (!this._config.show_trails) return;
-    for (const [key, points] of this._trackPoints) {
-      if (!active.has(key) || points.length < 2) continue;
-      const plane = aircraft.find((candidate) => (candidate.hex || candidate.entityId) === key);
+    const now = Date.now();
+    const maxAge = Math.max(60 * 1000, Number(this._config.trail_minutes) * 60 * 1000 || 5 * 60 * 1000);
+    for (const [key, rawPoints] of this._trackPoints) {
+      if (!visible.has(key)) continue;
+      const points = rawPoints.filter((point) => now - point.at <= maxAge).slice(-120);
+      if (points.length < 2) {
+        const existing = this._trails.get(key);
+        existing?.remove?.();
+        this._trails.delete(key);
+        continue;
+      }
+      const plane =
+        aircraft.find((candidate) => (candidate.hex || candidate.entityId) === key) ||
+        allAircraft.find((candidate) => (candidate.hex || candidate.entityId) === key) ||
+        this._lastPlanes.get(key);
       const color = planeColor(plane, this._config);
-      const latLngs = points.map((point) => [point.lat, point.lon]);
-      let polyline = this._trails.get(key);
-      if (!polyline) {
-        polyline = L.polyline(latLngs, { color, weight: 2, opacity: 0.55, interactive: false }).addTo(this._map);
-        this._trails.set(key, polyline);
+      const isSelected = key === this._selectedHex;
+      const displayPoints = isSelected ? points : thinTrackPoints(points, 36);
+      let layer = this._trails.get(key);
+      if (!layer || !layer.clearLayers) {
+        layer?.remove?.();
+        layer = L.layerGroup().addTo(this._map);
+        this._trails.set(key, layer);
       } else {
-        polyline.setLatLngs(latLngs);
-        polyline.setStyle({ color });
+        layer.clearLayers();
+      }
+      for (let index = 1; index < displayPoints.length; index += 1) {
+        const previous = displayPoints[index - 1];
+        const point = displayPoints[index];
+        const ageRatio = clamp((now - point.at) / maxAge, 0, 1);
+        const opacity = clamp(0.12 + (1 - ageRatio) * (isSelected ? 0.72 : 0.52), 0.12, isSelected ? 0.84 : 0.64);
+        L.polyline([[previous.lat, previous.lon], [point.lat, point.lon]], {
+          color,
+          interactive: false,
+          opacity,
+          weight: isSelected ? 3.2 : 2.1,
+        }).addTo(layer);
+      }
+      if (isSelected) {
+        const stride = Math.max(1, Math.floor(displayPoints.length / 8));
+        displayPoints.forEach((point, index) => {
+          const isLast = index === displayPoints.length - 1;
+          if (!isLast && index % stride !== 0) return;
+          const ageRatio = clamp((now - point.at) / maxAge, 0, 1);
+          L.circleMarker([point.lat, point.lon], {
+            color,
+            fillColor: color,
+            fillOpacity: clamp(0.16 + (1 - ageRatio) * 0.62, 0.16, 0.78),
+            interactive: false,
+            opacity: clamp(0.24 + (1 - ageRatio) * 0.52, 0.24, 0.76),
+            radius: isLast ? 3.7 : 2.2,
+            weight: 1,
+          }).addTo(layer);
+        });
       }
     }
   }
@@ -735,9 +828,18 @@ class LocalAdsbMapCard extends HTMLElement {
         ${statHtml("Fastest", fastest ? formatSpeed(fastest.speed) : "—")}`;
     }
 
-    const selected = aircraft.find((plane) => (plane.hex || plane.entityId) === this._selectedHex) || nearest;
+    const selectedKey = this._selectedHex;
+    const selected = selectedKey
+      ? aircraft.find((plane) => (plane.hex || plane.entityId) === selectedKey) ||
+        allAircraft.find((plane) => (plane.hex || plane.entityId) === selectedKey) ||
+        this._lastPlanes.get(selectedKey) ||
+        nearest
+      : nearest;
     const selectedPanel = this.shadowRoot.querySelector(".selected");
-    if (selectedPanel) selectedPanel.innerHTML = selected ? selectedHtml(selected) : `<div class="muted">Select an aircraft to inspect it.</div>`;
+    if (selectedPanel) {
+      const key = selected ? selected.hex || selected.entityId : undefined;
+      selectedPanel.innerHTML = selected ? selectedHtml(selected, this._trackPoints.get(key) || []) : `<div class="muted">Select an aircraft to inspect it.</div>`;
+    }
 
     const list = this.shadowRoot.querySelector(".aircraft-list");
     if (list) {
@@ -757,7 +859,7 @@ class LocalAdsbMapCard extends HTMLElement {
         });
       });
     }
-    if (lowest && selectedPanel && !selected) selectedPanel.innerHTML = selectedHtml(lowest);
+    if (lowest && selectedPanel && !selected) selectedPanel.innerHTML = selectedHtml(lowest, this._trackPoints.get(lowest.hex || lowest.entityId) || []);
   }
 }
 
@@ -785,6 +887,7 @@ function localAdsbAircraftFromHass(hass, source = "Local ADS-B Receiver") {
         verticalRate: num(attrs.vertical_rate_fpm),
         distance: num(attrs.distance_miles),
         seen: num(attrs.seen_seconds),
+        seenPosition: num(attrs.seen_position_seconds),
         squawk: attrs.squawk,
       };
     })
@@ -804,6 +907,7 @@ function planeMarkerHtml(plane, config) {
 }
 
 function planeAltitudeClass(plane, config) {
+  if (!plane) return "";
   if (plane.altitude !== undefined && plane.altitude <= Number(config.very_low_altitude_feet)) return "very-low";
   if (plane.altitude !== undefined && plane.altitude <= Number(config.low_altitude_feet)) return "low";
   return "";
@@ -817,28 +921,44 @@ function planeColor(plane, config) {
 }
 
 function planePopupHtml(plane) {
+  const trend = flightTrend(plane);
   return `<div class="local-adsb-popup">
     <div class="popup-title">${escapeHtml(shortLabel(plane))}</div>
     <div class="popup-grid">
       <span>Altitude</span><strong>${escapeHtml(formatAltitude(plane.altitude) || "—")}</strong>
       <span>Speed</span><strong>${escapeHtml(formatSpeed(plane.speed) || "—")}</strong>
-      <span>Heading</span><strong>${plane.track !== undefined ? `${Math.round(plane.track)}°` : "—"}</strong>
-      <span>Distance</span><strong>${plane.distance !== undefined ? `${plane.distance.toFixed(1)} mi` : "—"}</strong>
+      <span>Trend</span><strong>${escapeHtml(trend.detail)}</strong>
+      <span>Heading</span><strong>${escapeHtml(formatHeading(plane.track) || "—")}</strong>
+      <span>Distance</span><strong>${escapeHtml(formatDistance(plane.distance) || "—")}</strong>
       <span>Squawk</span><strong>${escapeHtml(plane.squawk || "—")}</strong>
       <span>ICAO</span><strong>${escapeHtml(plane.hex?.toUpperCase() || "—")}</strong>
     </div>
   </div>`;
 }
 
-function selectedHtml(plane) {
-  return `<div class="selected-title">${escapeHtml(shortLabel(plane))}</div>
+function selectedHtml(plane, points = []) {
+  const trend = flightTrend(plane, points);
+  const lastSeen = formatLastSeen(plane, points);
+  const trail = trailSummary(points);
+  const coordinates = formatCoordinates(plane.latitude, plane.longitude);
+  const squawkIcao = [plane.hex?.toUpperCase(), plane.squawk].filter(Boolean).join(" / ");
+  return `<div class="selected-head">
+      <div>
+        <div class="selected-title">${escapeHtml(shortLabel(plane))}</div>
+        <div class="selected-subline"><span class="mono">${escapeHtml(squawkIcao || "Unknown ICAO")}</span>${lastSeen ? ` · ${escapeHtml(lastSeen)}` : ""}</div>
+      </div>
+      <div class="status-chip ${escapeHtml(trend.className)}">${escapeHtml(trend.label)}</div>
+    </div>
     <div class="selected-grid">
       <div><div class="label">Altitude</div><div class="value">${escapeHtml(formatAltitude(plane.altitude) || "—")}</div></div>
       <div><div class="label">Speed</div><div class="value">${escapeHtml(formatSpeed(plane.speed) || "—")}</div></div>
-      <div><div class="label">Heading</div><div class="value">${plane.track !== undefined ? `${Math.round(plane.track)}°` : "—"}</div></div>
-      <div><div class="label">Distance</div><div class="value">${plane.distance !== undefined ? `${plane.distance.toFixed(1)} mi` : "—"}</div></div>
-      <div><div class="label">Vertical rate</div><div class="value">${plane.verticalRate !== undefined ? `${Math.round(plane.verticalRate).toLocaleString()} fpm` : "—"}</div></div>
-      <div><div class="label">ICAO / squawk</div><div class="value">${escapeHtml([plane.hex?.toUpperCase(), plane.squawk].filter(Boolean).join(" / ") || "—")}</div></div>
+      <div><div class="label">Heading</div><div class="value">${escapeHtml(formatHeading(plane.track) || "—")}</div></div>
+      <div><div class="label">Distance</div><div class="value">${escapeHtml(formatDistance(plane.distance) || "—")}</div></div>
+      <div><div class="label">Vertical trend</div><div class="value">${escapeHtml(trend.detail)}</div></div>
+      <div><div class="label">Trail</div><div class="value">${escapeHtml(trail || "—")}</div></div>
+      <div><div class="label">Coordinates</div><div class="value mono">${escapeHtml(coordinates || "—")}</div></div>
+      <div><div class="label">Last point</div><div class="value">${escapeHtml(lastPointSummary(points) || "—")}</div></div>
+      <div><div class="label">Entity</div><div class="value mono">${escapeHtml(plane.entityId || plane.hex || "—")}</div></div>
     </div>`;
 }
 
@@ -853,6 +973,116 @@ function aircraftRowHtml(plane, selected) {
 
 function statHtml(label, value) {
   return `<div class="stat"><div class="label">${escapeHtml(label)}</div><div class="value">${escapeHtml(value)}</div></div>`;
+}
+
+function trackPointFromPlane(plane, at) {
+  return {
+    lat: plane.latitude,
+    lon: plane.longitude,
+    at: observedAt(plane, at),
+    altitude: plane.altitude,
+    speed: plane.speed,
+    track: plane.track,
+    verticalRate: plane.verticalRate,
+    distance: plane.distance,
+    callsign: plane.callsign,
+  };
+}
+
+function observedAt(plane, fallbackAt = Date.now()) {
+  const ageSeconds = num(plane?.seenPosition) ?? num(plane?.seen);
+  if (ageSeconds === undefined) return fallbackAt;
+  return fallbackAt - Math.max(0, ageSeconds) * 1000;
+}
+
+function thinTrackPoints(points, maxPoints) {
+  if (points.length <= maxPoints) return points;
+  const thinned = [];
+  const step = (points.length - 1) / (maxPoints - 1);
+  for (let index = 0; index < maxPoints; index += 1) {
+    thinned.push(points[Math.round(index * step)]);
+  }
+  return thinned;
+}
+
+function flightTrend(plane, points = []) {
+  if (plane?.lastSeenAt && Date.now() - plane.lastSeenAt > 20_000) {
+    return { label: "Stale", className: "stale", detail: "No recent update" };
+  }
+  const verticalRate = num(plane?.verticalRate);
+  if (verticalRate !== undefined) {
+    if (verticalRate >= 300) return { label: "Climbing", className: "climbing", detail: `↑ ${formatVerticalRate(verticalRate)}` };
+    if (verticalRate <= -300) return { label: "Descending", className: "descending", detail: `↓ ${formatVerticalRate(verticalRate)}` };
+    return { label: "Level", className: "level", detail: formatVerticalRate(verticalRate) };
+  }
+
+  const altitudePoints = points.filter((point) => point.altitude !== undefined);
+  if (altitudePoints.length >= 2) {
+    const first = altitudePoints[0];
+    const last = altitudePoints[altitudePoints.length - 1];
+    const diff = last.altitude - first.altitude;
+    if (diff > 250) return { label: "Climbing", className: "climbing", detail: `↑ ${Math.round(diff).toLocaleString()} ft over trail` };
+    if (diff < -250) return { label: "Descending", className: "descending", detail: `↓ ${Math.round(Math.abs(diff)).toLocaleString()} ft over trail` };
+    return { label: "Level", className: "level", detail: "Stable over trail" };
+  }
+
+  return { label: "Tracking", className: "level", detail: "Live position" };
+}
+
+function formatVerticalRate(value) {
+  if (value === undefined) return "—";
+  const rounded = Math.round(value);
+  const sign = rounded > 0 ? "+" : "";
+  return `${sign}${rounded.toLocaleString()} fpm`;
+}
+
+function formatHeading(track) {
+  return track !== undefined ? `${Math.round(track)}°` : "";
+}
+
+function formatDistance(distance) {
+  return distance !== undefined ? `${distance.toFixed(1)} mi` : "";
+}
+
+function formatCoordinates(lat, lon) {
+  if (!Number.isFinite(lat) || !Number.isFinite(lon)) return "";
+  return `${lat.toFixed(5)}, ${lon.toFixed(5)}`;
+}
+
+function formatLastSeen(plane, points = []) {
+  const lastPoint = points[points.length - 1];
+  const lastAt = plane?.lastSeenAt || lastPoint?.at;
+  if (lastAt) {
+    const ageSeconds = Math.max(0, Math.round((Date.now() - lastAt) / 1000));
+    return `seen ${formatAge(ageSeconds)} ago`;
+  }
+  if (plane?.seen !== undefined) return `seen ${formatAge(Math.round(plane.seen))} ago`;
+  return "";
+}
+
+function formatAge(seconds) {
+  if (seconds < 60) return `${seconds}s`;
+  const minutes = Math.floor(seconds / 60);
+  const remainder = seconds % 60;
+  if (minutes < 60) return remainder ? `${minutes}m ${remainder}s` : `${minutes}m`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
+function trailSummary(points = []) {
+  if (points.length < 2) return "No trail yet";
+  const first = points[0];
+  const last = points[points.length - 1];
+  const durationSeconds = Math.max(0, Math.round((last.at - first.at) / 1000));
+  return `${points.length} pts · ${formatAge(durationSeconds)}`;
+}
+
+function lastPointSummary(points = []) {
+  const point = points[points.length - 1];
+  if (!point) return "";
+  return [formatAltitude(point.altitude), formatSpeed(point.speed), formatHeading(point.track)]
+    .filter(Boolean)
+    .join(" · ");
 }
 
 function cssLength(value) {
