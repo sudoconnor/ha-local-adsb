@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Local ADS-B Receiver",
+        "description": "Connect to a local dump1090/readsb/FR24 receiver.",
+        "data": {
+          "host": "Receiver host or IP",
+          "aircraft_url": "Aircraft JSON URL",
+          "monitor_url": "FR24 monitor JSON URL",
+          "scan_interval": "Polling interval (seconds)",
+          "home_latitude": "Home latitude",
+          "home_longitude": "Home longitude",
+          "radius_miles": "Event radius (miles)",
+          "low_altitude_feet": "Low-aircraft altitude threshold (feet)",
+          "enable_events": "Fire aircraft events"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Could not connect to the receiver aircraft JSON endpoint.",
+      "unknown": "Unexpected error"
+    },
+    "abort": {
+      "already_configured": "This receiver is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Local ADS-B Receiver options",
+        "data": {
+          "scan_interval": "Polling interval (seconds)",
+          "home_latitude": "Home latitude",
+          "home_longitude": "Home longitude",
+          "radius_miles": "Event radius (miles)",
+          "low_altitude_feet": "Low-aircraft altitude threshold (feet)",
+          "enable_events": "Fire aircraft events"
+        }
+      }
+    }
+  },
+  "entity": {
+    "sensor": {
+      "aircraft_visible": { "name": "Aircraft visible" },
+      "aircraft_with_position": { "name": "Aircraft with position" },
+      "messages": { "name": "Messages" },
+      "message_rate": { "name": "Message rate" },
+      "feed_status": { "name": "Feed status" },
+      "feed_aircraft_tracked": { "name": "Feed aircraft tracked" },
+      "mlat_status": { "name": "MLAT status" },
+      "nearest_aircraft": { "name": "Nearest aircraft" },
+      "nearest_aircraft_distance": { "name": "Nearest aircraft distance" },
+      "lowest_aircraft": { "name": "Lowest aircraft" },
+      "lowest_aircraft_altitude": { "name": "Lowest aircraft altitude" },
+      "nearest_low_aircraft": { "name": "Nearest low aircraft" }
+    },
+    "binary_sensor": {
+      "receiver_connected": { "name": "Receiver connected" },
+      "feeder_connected": { "name": "Feeder connected" }
+    }
+  }
+}

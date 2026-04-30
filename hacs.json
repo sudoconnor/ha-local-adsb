@@ -1,0 +1,5 @@
+{
+  "name": "Local ADS-B Receiver",
+  "render_readme": true,
+  "homeassistant": "2024.12.0"
+}

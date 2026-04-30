@@ -1,0 +1,10 @@
+name: Feature request
+description: Suggest a Local ADS-B Receiver enhancement
+body:
+  - type: textarea
+    id: feature
+    attributes:
+      label: Feature
+      description: What would you like to see?
+    validations:
+      required: true
