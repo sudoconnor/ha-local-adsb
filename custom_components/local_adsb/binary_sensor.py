@@ -25,6 +25,7 @@ StateGetter = Callable[[ReceiverData], bool | None]
 class LocalAdsbBinarySensorDescription(BinarySensorEntityDescription):
     """Description for a Local ADS-B binary sensor."""
 
+    display_name: str
     state_fn: StateGetter
 
 
@@ -32,12 +33,14 @@ BINARY_SENSORS: tuple[LocalAdsbBinarySensorDescription, ...] = (
     LocalAdsbBinarySensorDescription(
         key="receiver_connected",
         translation_key="receiver_connected",
+        display_name="Receiver connected",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         state_fn=lambda data: data.receiver_connected,
     ),
     LocalAdsbBinarySensorDescription(
         key="feeder_connected",
         translation_key="feeder_connected",
+        display_name="Feeder connected",
         device_class=BinarySensorDeviceClass.CONNECTIVITY,
         state_fn=lambda data: data.feeder_connected,
     ),
@@ -67,6 +70,7 @@ class LocalAdsbBinarySensor(LocalAdsbEntity, BinarySensorEntity):
     ) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
+        self._attr_name = description.display_name
 
     @property
     def is_on(self) -> bool | None:

@@ -52,6 +52,7 @@ def _aircraft_attrs(aircraft: Aircraft | None) -> dict[str, Any]:
 class LocalAdsbSensorDescription(SensorEntityDescription):
     """Description for a Local ADS-B sensor."""
 
+    display_name: str
     value_fn: ValueGetter
     attr_fn: AttrGetter | None = None
 
@@ -60,6 +61,7 @@ class LocalAdsbSensorDescription(SensorEntityDescription):
 class AircraftSensorDescription(SensorEntityDescription):
     """Description for an aircraft summary sensor."""
 
+    display_name: str
     aircraft_fn: AircraftGetter
     value_attr: str | None = None
 
@@ -68,6 +70,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="aircraft_visible",
         translation_key="aircraft_visible",
+        display_name="Aircraft visible",
         native_unit_of_measurement="aircraft",
         icon="mdi:airplane",
         state_class=SensorStateClass.MEASUREMENT,
@@ -76,6 +79,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="aircraft_with_position",
         translation_key="aircraft_with_position",
+        display_name="Aircraft with position",
         native_unit_of_measurement="aircraft",
         icon="mdi:map-marker-radius",
         state_class=SensorStateClass.MEASUREMENT,
@@ -84,6 +88,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="messages",
         translation_key="messages",
+        display_name="Messages",
         icon="mdi:counter",
         state_class=SensorStateClass.TOTAL_INCREASING,
         value_fn=lambda data, _coordinator: data.messages,
@@ -91,6 +96,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="message_rate",
         translation_key="message_rate",
+        display_name="Message rate",
         native_unit_of_measurement="messages/s",
         icon="mdi:speedometer",
         state_class=SensorStateClass.MEASUREMENT,
@@ -101,6 +107,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="feed_status",
         translation_key="feed_status",
+        display_name="Feed status",
         icon="mdi:radar",
         value_fn=lambda data, _coordinator: data.feed_status,
         attr_fn=lambda data, _coordinator: {
@@ -114,6 +121,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="feed_aircraft_tracked",
         translation_key="feed_aircraft_tracked",
+        display_name="Feed aircraft tracked",
         native_unit_of_measurement="aircraft",
         icon="mdi:upload-network",
         state_class=SensorStateClass.MEASUREMENT,
@@ -127,6 +135,7 @@ SENSORS: tuple[LocalAdsbSensorDescription, ...] = (
     LocalAdsbSensorDescription(
         key="mlat_status",
         translation_key="mlat_status",
+        display_name="MLAT status",
         icon="mdi:crosshairs-gps",
         value_fn=lambda data, _coordinator: (
             _monitor_str("mlat_problem")(data, _coordinator)
@@ -139,12 +148,14 @@ AIRCRAFT_SENSORS: tuple[AircraftSensorDescription, ...] = (
     AircraftSensorDescription(
         key="nearest_aircraft",
         translation_key="nearest_aircraft",
+        display_name="Nearest aircraft",
         icon="mdi:airplane-marker",
         aircraft_fn=lambda data, _coordinator: data.nearest_aircraft,
     ),
     AircraftSensorDescription(
         key="nearest_aircraft_distance",
         translation_key="nearest_aircraft_distance",
+        display_name="Nearest aircraft distance",
         native_unit_of_measurement=UnitOfLength.MILES,
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
@@ -155,12 +166,14 @@ AIRCRAFT_SENSORS: tuple[AircraftSensorDescription, ...] = (
     AircraftSensorDescription(
         key="lowest_aircraft",
         translation_key="lowest_aircraft",
+        display_name="Lowest aircraft",
         icon="mdi:airplane-alert",
         aircraft_fn=lambda data, _coordinator: data.lowest_aircraft,
     ),
     AircraftSensorDescription(
         key="lowest_aircraft_altitude",
         translation_key="lowest_aircraft_altitude",
+        display_name="Lowest aircraft altitude",
         native_unit_of_measurement="ft",
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:altimeter",
@@ -170,6 +183,7 @@ AIRCRAFT_SENSORS: tuple[AircraftSensorDescription, ...] = (
     AircraftSensorDescription(
         key="nearest_low_aircraft",
         translation_key="nearest_low_aircraft",
+        display_name="Nearest low aircraft",
         icon="mdi:airplane-alert",
         aircraft_fn=lambda data, coordinator: data.nearest_low_aircraft(
             coordinator.low_altitude_feet
@@ -200,6 +214,7 @@ class LocalAdsbSensor(LocalAdsbEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
+        self._attr_name = description.display_name
 
     @property
     def native_value(self) -> str | int | float | None:
@@ -230,6 +245,7 @@ class LocalAdsbAircraftSensor(LocalAdsbEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator, description.key)
         self.entity_description = description
+        self._attr_name = description.display_name
 
     @property
     def aircraft(self) -> Aircraft | None:
