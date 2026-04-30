@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.6.0
+
+- Add cockpit-style map controls for All/Nearby/Low filtering, callsign/ICAO search, trail toggle, auto-fit toggle, and reset-view.
+- Show filtered/total aircraft counts so dashboard filtering is clear at a glance.
+- Keep the map card cleanly dogfoodable without adding extra dashboard cards.
+
 ## 0.5.0
 
 - Vendor Leaflet JavaScript/CSS inside the integration so the interactive map engine loads from Home Assistant instead of a CDN.

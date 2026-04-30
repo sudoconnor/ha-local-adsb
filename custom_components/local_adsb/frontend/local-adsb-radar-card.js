@@ -243,6 +243,8 @@ class LocalAdsbMapCard extends HTMLElement {
     this._historyFetchAt = 0;
     this._historyInFlight = undefined;
     this._selectedHex = undefined;
+    this._scope = "all";
+    this._search = "";
     this._shellRendered = false;
   }
 
@@ -257,12 +259,14 @@ class LocalAdsbMapCard extends HTMLElement {
       auto_fit: true,
       zoom: 9,
       max_zoom: 13,
+      show_controls: true,
       show_list: true,
       show_stats: true,
       show_trails: true,
       trail_minutes: 5,
       history_api: "/api/local_adsb/history",
       history_fetch_interval_seconds: 15,
+      nearby_miles: 10,
       range_rings_miles: [5, 10, 25, 50],
       low_altitude_feet: 3000,
       very_low_altitude_feet: 1000,
@@ -324,6 +328,43 @@ class LocalAdsbMapCard extends HTMLElement {
         }
         .title { font-size: 1.2rem; font-weight: 650; }
         .count { color: var(--secondary-text-color); font-size: 0.9rem; text-align: right; }
+        .controls {
+          display: flex;
+          gap: 8px;
+          align-items: center;
+          flex-wrap: wrap;
+          padding: 0 12px 10px;
+        }
+        .control-group {
+          display: inline-flex;
+          gap: 4px;
+          padding: 4px;
+          border-radius: 999px;
+          background: var(--secondary-background-color, rgba(127,127,127,0.09));
+        }
+        .control-btn {
+          border: 0;
+          border-radius: 999px;
+          color: var(--primary-text-color);
+          cursor: pointer;
+          font: inherit;
+          font-size: 0.8rem;
+          padding: 6px 10px;
+          background: transparent;
+        }
+        .control-btn:hover { background: rgba(127,127,127,0.16); }
+        .control-btn.active { background: var(--accent-color, #03a9f4); color: var(--text-primary-color, white); }
+        .search {
+          border: 1px solid var(--divider-color, rgba(128,128,128,0.28));
+          border-radius: 999px;
+          box-sizing: border-box;
+          min-width: 160px;
+          padding: 8px 12px;
+          background: var(--card-background-color, transparent);
+          color: var(--primary-text-color);
+          font: inherit;
+          font-size: 0.85rem;
+        }
         #map {
           height: var(--local-adsb-map-height, ${cssLength(this._config.height || "620px")});
           min-height: 360px;
@@ -391,6 +432,7 @@ class LocalAdsbMapCard extends HTMLElement {
         .local-adsb-popup { min-width: 180px; }
         .local-adsb-popup .popup-title { font-weight: 750; font-size: 1rem; margin-bottom: 4px; }
         .local-adsb-popup .popup-grid { display: grid; grid-template-columns: auto auto; gap: 3px 10px; }
+        .badge { display: inline-block; margin-left: 6px; color: var(--secondary-text-color); font-size: 0.78rem; font-weight: 500; }
         .leaflet-container { font-family: var(--paper-font-body1_-_font-family, sans-serif); }
         .leaflet-popup-content-wrapper, .leaflet-popup-tip { background: var(--ha-card-background, var(--card-background-color, white)); color: var(--primary-text-color); }
         @media (max-width: 760px) {
@@ -403,6 +445,19 @@ class LocalAdsbMapCard extends HTMLElement {
           <div class="title"></div>
           <div class="count"></div>
         </div>
+        <div class="controls">
+          <div class="control-group" aria-label="Aircraft filter">
+            <button class="control-btn" data-scope="all" type="button">All</button>
+            <button class="control-btn" data-scope="nearby" type="button">Nearby</button>
+            <button class="control-btn" data-scope="low" type="button">Low</button>
+          </div>
+          <div class="control-group" aria-label="Map toggles">
+            <button class="control-btn" data-toggle="trails" type="button">Trails</button>
+            <button class="control-btn" data-toggle="autofit" type="button">Auto-fit</button>
+            <button class="control-btn" data-action="reset-view" type="button">Reset</button>
+          </div>
+          <input class="search" type="search" placeholder="Search callsign or ICAO" aria-label="Search aircraft">
+        </div>
         <div class="map-wrap">
           <div id="map"></div>
           <div class="map-status">Loading live aircraft map…</div>
@@ -414,14 +469,17 @@ class LocalAdsbMapCard extends HTMLElement {
         </div>
       </ha-card>`;
     this._shellRendered = true;
+    this._wireControls();
   }
 
   _update() {
     if (!this._hass || !this.shadowRoot) return;
-    const aircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+    const allAircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+    const aircraft = this._filterAircraft(allAircraft);
     this._refreshHistory(aircraft);
     this._updateTracks(aircraft);
-    this._updateHeaderAndPanels(aircraft);
+    this._syncControls();
+    this._updateHeaderAndPanels(aircraft, allAircraft);
     if (!this._map || !window.L) return;
     this._drawRangeRings();
     this._updateMarkers(aircraft);
@@ -429,6 +487,59 @@ class LocalAdsbMapCard extends HTMLElement {
     this._autoFit(aircraft);
     const status = this.shadowRoot.querySelector(".map-status");
     if (status) status.textContent = aircraft.length ? "" : "No positioned aircraft currently visible.";
+  }
+
+  _wireControls() {
+    const controls = this.shadowRoot.querySelector(".controls");
+    if (!controls) return;
+    controls.addEventListener("click", (event) => {
+      const button = event.target.closest("button");
+      if (!button) return;
+      const scope = button.getAttribute("data-scope");
+      const toggle = button.getAttribute("data-toggle");
+      const action = button.getAttribute("data-action");
+      if (scope) this._scope = scope;
+      if (toggle === "trails") this._config.show_trails = !this._config.show_trails;
+      if (toggle === "autofit") {
+        this._config.auto_fit = !this._config.auto_fit;
+        if (this._config.auto_fit) this._userMoved = false;
+      }
+      if (action === "reset-view") {
+        this._userMoved = false;
+        this._map?.setView(this._homeCenter(), Number(this._config.zoom), { animate: true });
+      }
+      this._update();
+    });
+    const search = this.shadowRoot.querySelector(".search");
+    search?.addEventListener("input", () => {
+      this._search = search.value.trim().toLowerCase();
+      this._update();
+    });
+  }
+
+  _syncControls() {
+    const controls = this.shadowRoot.querySelector(".controls");
+    if (!controls) return;
+    controls.style.display = this._config.show_controls ? "flex" : "none";
+    controls.querySelectorAll("[data-scope]").forEach((button) => {
+      button.classList.toggle("active", button.getAttribute("data-scope") === this._scope);
+    });
+    controls.querySelector('[data-toggle="trails"]')?.classList.toggle("active", Boolean(this._config.show_trails));
+    controls.querySelector('[data-toggle="autofit"]')?.classList.toggle("active", Boolean(this._config.auto_fit) && !this._userMoved);
+  }
+
+  _filterAircraft(aircraft) {
+    const nearbyMiles = Number(this._config.nearby_miles) || 10;
+    const lowAltitude = Number(this._config.low_altitude_feet) || 3000;
+    return aircraft.filter((plane) => {
+      if (this._scope === "nearby" && !(plane.distance !== undefined && plane.distance <= nearbyMiles)) return false;
+      if (this._scope === "low" && !(plane.altitude !== undefined && plane.altitude <= lowAltitude)) return false;
+      if (this._search) {
+        const haystack = [plane.callsign, plane.hex, plane.name].filter(Boolean).join(" ").toLowerCase();
+        if (!haystack.includes(this._search)) return false;
+      }
+      return true;
+    });
   }
 
   _homeCenter() {
@@ -546,7 +657,8 @@ class LocalAdsbMapCard extends HTMLElement {
         marker.on("click", () => {
           this._selectedHex = key;
           marker.openPopup();
-          this._updateHeaderAndPanels(localAdsbAircraftFromHass(this._hass, this._config.source));
+          const allAircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+          this._updateHeaderAndPanels(this._filterAircraft(allAircraft), allAircraft);
         });
         this._markers.set(key, marker);
       } else {
@@ -602,11 +714,12 @@ class LocalAdsbMapCard extends HTMLElement {
     });
   }
 
-  _updateHeaderAndPanels(aircraft) {
+  _updateHeaderAndPanels(aircraft, allAircraft = aircraft) {
     const title = this.shadowRoot.querySelector(".title");
     const count = this.shadowRoot.querySelector(".count");
     if (title) title.textContent = this._config.title;
-    if (count) count.textContent = `${aircraft.length} aircraft · ${this._config.source}`;
+    const scopeLabel = this._scope === "all" ? "visible" : this._scope;
+    if (count) count.textContent = `${aircraft.length}/${allAircraft.length} ${scopeLabel} · ${this._config.source}`;
 
     const lowCount = aircraft.filter((plane) => plane.altitude !== undefined && plane.altitude <= Number(this._config.low_altitude_feet)).length;
     const nearest = aircraft[0];
@@ -616,7 +729,7 @@ class LocalAdsbMapCard extends HTMLElement {
     if (stats) {
       stats.style.display = this._config.show_stats ? "grid" : "none";
       stats.innerHTML = `
-        ${statHtml("Visible", aircraft.length || "—")}
+        ${statHtml("Visible", `${aircraft.length}/${allAircraft.length}`)}
         ${statHtml(`Low ≤${Number(this._config.low_altitude_feet).toLocaleString()} ft`, lowCount)}
         ${statHtml("Nearest", nearest ? shortLabel(nearest) : "—")}
         ${statHtml("Fastest", fastest ? formatSpeed(fastest.speed) : "—")}`;
@@ -639,7 +752,8 @@ class LocalAdsbMapCard extends HTMLElement {
             this._map.panTo(marker.getLatLng(), { animate: true });
             marker.openPopup();
           }
-          this._updateHeaderAndPanels(localAdsbAircraftFromHass(this._hass, this._config.source));
+          const allAircraft = localAdsbAircraftFromHass(this._hass, this._config.source);
+          this._updateHeaderAndPanels(this._filterAircraft(allAircraft), allAircraft);
         });
       });
     }

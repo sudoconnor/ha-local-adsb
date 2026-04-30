@@ -75,6 +75,8 @@ Optional map settings:
 - `tile_url` / `tile_attribution`: override the map tile provider.
 - `height`: map height, default `620px`.
 - `auto_fit`: fit Home + active aircraft until you manually pan/zoom.
+- `show_controls`: show/hide cockpit controls for All/Nearby/Low, search, trails, auto-fit, and reset view.
+- `nearby_miles`: distance threshold for the Nearby filter, default `10`.
 - `show_list`: show/hide the clickable aircraft list.
 - `show_stats`: show/hide the stat strip.
 - `show_trails`: show/hide recent position trails.
